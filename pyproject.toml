@@ -1,0 +1,13 @@
+[project]
+name = "rag-project"
+version = "0.1.0"
+description = "Document Q&A RAG system built with the raw OpenAI SDK"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "openai>=3.14.1",
+    "pypdf>=6.19.0",
+    "python-dotenv>=1.2.3",
+    "supabase>=2.31.0",
+    "uvicorn>=0.53.0",
+]
