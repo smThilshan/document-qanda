@@ -36,12 +36,32 @@ alike) — the opposite direction of "similarity". The match_chunks SQL
 function (see setup instructions) converts this with `1 - distance` so
 the API returns a score where higher means more relevant, which reads
 more naturally.
+
+WHY A HARD SIMILARITY THRESHOLD (MIN_SIMILARITY):
+
+match_chunks always returns its top N rows, even if none of them are
+actually relevant — pgvector doesn't know what "relevant" means, only
+"closest of what exists." Without a cutoff, an off-topic question still
+gets handed 5 chunks of context, and we're relying entirely on the LLM's
+system prompt to notice they're irrelevant and say so. That worked in
+testing, but it's the model's judgment call, not a guarantee.
+
+MIN_SIMILARITY = 0.25 was set empirically, not guessed: against this
+project's real test data, genuinely relevant matches scored 0.36-0.41,
+and a deliberately unrelated question scored 0.07-0.11 — a wide, clean
+gap. 0.25 sits comfortably in that gap. This is a heuristic tied to
+OpenAI's text-embedding-3-small on this kind of document; a different
+embedding model or very different content (e.g. short, keyword-sparse
+text) could shift where relevant/irrelevant scores actually fall, so this
+number is a starting point to revisit if retrieval quality looks off on
+a different corpus, not a universal constant.
 """
 
 from app.db.supabase_client import supabase
 from app.services.embeddings import EmbeddingError, generate_embedding
 
 DEFAULT_MATCH_COUNT = 5
+MIN_SIMILARITY = 0.25
 
 
 class RetrievalError(Exception):
@@ -51,6 +71,12 @@ class RetrievalError(Exception):
 def retrieve_relevant_chunks(
     question: str, match_count: int = DEFAULT_MATCH_COUNT
 ) -> list[dict]:
+    """
+    Returns chunks similar enough to be worth answering from. May return
+    fewer than match_count (including zero) if nothing clears
+    MIN_SIMILARITY — that's the caller's signal to treat this as "nothing
+    relevant found" rather than force an answer from weak matches.
+    """
     try:
         query_embedding = generate_embedding(question)
     except EmbeddingError as e:
@@ -64,4 +90,4 @@ def retrieve_relevant_chunks(
     except Exception as e:
         raise RetrievalError(f"Similarity search failed: {e}") from e
 
-    return response.data
+    return [row for row in response.data if row["similarity"] >= MIN_SIMILARITY]

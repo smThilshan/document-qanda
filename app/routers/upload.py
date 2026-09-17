@@ -12,11 +12,26 @@ them succeed do we do one insert() call with every row. This is what
 keeps a failure partway through from leaving a "half a document" of
 chunks silently sitting in the chunks table — either every chunk for this
 upload lands in the database, or (if anything fails) none do.
+
+SINGLE-DOCUMENT MODE: retrieval currently searches the whole chunks table
+with no per-document filter, so storing more than one document at once
+means a question could pull in and blend chunks from unrelated documents
+without saying so. Until /query supports scoping to one document, every
+upload deletes all existing chunks first, so the table only ever holds
+one document's data. This is a deliberate, temporary constraint — the
+real fix for supporting multiple documents is a document_name filter on
+/query, not this. Known limitation: the delete and the insert are two
+separate database calls, not one transaction, so a failure in the insert
+step (after the old data is already gone) leaves the table empty rather
+than restoring the previous document — rare in practice, since it can
+only happen after every embedding has already succeeded, but worth
+knowing if that ever happens; the fix would just be to re-upload.
 """
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.db.supabase_client import supabase
+from app.schemas import UploadResponse
 from app.services.chunking import chunk_text
 from app.services.embeddings import EmbeddingError, generate_embeddings_batch
 from app.services.pdf_extraction import PDFExtractionError, extract_text_from_pdf
@@ -24,8 +39,8 @@ from app.services.pdf_extraction import PDFExtractionError, extract_text_from_pd
 router = APIRouter()
 
 
-@router.post("/upload")
-async def upload_document(file: UploadFile | None = File(None)):
+@router.post("/upload", response_model=UploadResponse)
+async def upload_document(file: UploadFile | None = File(None)) -> UploadResponse:
     if file is None:
         raise HTTPException(status_code=400, detail="No file provided.")
 
@@ -71,6 +86,19 @@ async def upload_document(file: UploadFile | None = File(None)):
         for chunk, embedding in zip(chunks, embeddings)
     ]
 
+    # Single-document mode (see module docstring): clear any previously
+    # stored document before inserting the new one. PostgREST requires a
+    # filter on delete for safety, so `neq document_name ''` is used as an
+    # always-true condition — document_name is never actually blank for a
+    # real upload — to mean "delete every row."
+    try:
+        supabase.table("chunks").delete().neq("document_name", "").execute()
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to clear previous document: {e}",
+        ) from e
+
     # A single insert() call with the full row list is one SQL INSERT
     # statement — Postgres runs it as one atomic transaction, so this
     # either stores every chunk for this document, or (if it raises)
@@ -83,9 +111,9 @@ async def upload_document(file: UploadFile | None = File(None)):
             detail=f"Failed to store chunks in the database: {e}",
         ) from e
 
-    return {
-        "filename": filename,
-        "total_chunks": len(chunks),
-        "chunks_stored": len(rows),
-        "first_chunk_sample": chunks[0],
-    }
+    return UploadResponse(
+        filename=filename,
+        total_chunks=len(chunks),
+        chunks_stored=len(rows),
+        first_chunk_sample=chunks[0],
+    )

@@ -8,46 +8,40 @@ together and shaping the HTTP response.
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
+from app.schemas import QueryRequest, QueryResponse
 from app.services.generation import GenerationError, generate_answer
 from app.services.retrieval import RetrievalError, retrieve_relevant_chunks
 
 router = APIRouter()
 
 
-class QueryRequest(BaseModel):
-    question: str
-
-
-@router.post("/query")
-def query_chunks(request: QueryRequest):
-    question = request.question.strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="Question must not be empty.")
+@router.post("/query", response_model=QueryResponse)
+def query_chunks(request: QueryRequest) -> QueryResponse:
+    # Emptiness/whitespace is already rejected by QueryRequest's
+    # validator, and the value it returns is already stripped.
+    question = request.question
 
     try:
         chunks = retrieve_relevant_chunks(question)
     except RetrievalError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
-    # No stored chunks came back at all (e.g. empty database) — there's
-    # nothing to ground an answer in, so skip the LLM call entirely rather
-    # than spend a request asking it to say "I don't know."
+    # Either no chunks exist at all, or none cleared MIN_SIMILARITY in
+    # retrieve_relevant_chunks — either way, there's nothing worth
+    # grounding an answer in. This is a code-enforced guarantee, not the
+    # LLM's own judgment call: we skip the LLM entirely rather than send
+    # it weak matches and hope it notices.
     if not chunks:
-        return {
-            "question": question,
-            "answer": "I don't know based on the provided document.",
-            "sources": [],
-        }
+        return QueryResponse(
+            question=question,
+            answer="No relevant information found in the uploaded document.",
+            sources=[],
+        )
 
     try:
         answer = generate_answer(question, chunks)
     except GenerationError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 
-    return {
-        "question": question,
-        "answer": answer,
-        "sources": chunks,
-    }
+    return QueryResponse(question=question, answer=answer, sources=chunks)
