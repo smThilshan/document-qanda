@@ -1,17 +1,24 @@
 """
 Document upload endpoint.
 
-Phase 2 scope: accept a PDF, extract its text, split it into chunks, and
-report back what *would* be stored — no database writes yet (that's the
-next phase). The endpoint itself stays thin: it validates the HTTP-level
-concerns (was a file sent, is it a PDF) and delegates the real work to
-app/services/, which is what keeps main.py-adjacent files small as the
-project grows.
+Accepts a PDF, extracts its text, chunks it, embeds every chunk, and
+stores the results in Supabase. The endpoint stays thin — HTTP-level
+validation only — with extraction, chunking, embedding, and storage each
+delegated to app/services/ or app/db/.
+
+ATOMICITY: embeddings for every chunk are generated FIRST, entirely in
+memory, before a single row is written to the database. Only once all of
+them succeed do we do one insert() call with every row. This is what
+keeps a failure partway through from leaving a "half a document" of
+chunks silently sitting in the chunks table — either every chunk for this
+upload lands in the database, or (if anything fails) none do.
 """
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from app.db.supabase_client import supabase
 from app.services.chunking import chunk_text
+from app.services.embeddings import EmbeddingError, generate_embeddings_batch
 from app.services.pdf_extraction import PDFExtractionError, extract_text_from_pdf
 
 router = APIRouter()
@@ -44,9 +51,41 @@ async def upload_document(file: UploadFile | None = File(None)):
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     chunks = chunk_text(text)
+    if not chunks:
+        raise HTTPException(
+            status_code=400, detail="No chunks could be produced from this PDF."
+        )
+
+    # Generate every embedding before touching the database — see module
+    # docstring for why. If this raises, nothing has been written yet.
+    try:
+        embeddings = generate_embeddings_batch(chunks)
+    except EmbeddingError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Embedding generation failed; no data was stored. {e}",
+        ) from e
+
+    rows = [
+        {"document_name": filename, "content": chunk, "embedding": embedding}
+        for chunk, embedding in zip(chunks, embeddings)
+    ]
+
+    # A single insert() call with the full row list is one SQL INSERT
+    # statement — Postgres runs it as one atomic transaction, so this
+    # either stores every chunk for this document, or (if it raises)
+    # stores none of them.
+    try:
+        supabase.table("chunks").insert(rows).execute()
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to store chunks in the database: {e}",
+        ) from e
 
     return {
         "filename": filename,
         "total_chunks": len(chunks),
-        "first_chunk_sample": chunks[0] if chunks else None,
+        "chunks_stored": len(rows),
+        "first_chunk_sample": chunks[0],
     }
