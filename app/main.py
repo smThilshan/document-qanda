@@ -8,11 +8,12 @@ the app. main.py should stay small forever — it's the wiring, not the logic.
 
 from fastapi import FastAPI
 
-from app.routers import upload
+from app.routers import query, upload
 
 app = FastAPI(title="Document Q&A RAG System")
 
 app.include_router(upload.router)
+app.include_router(query.router)
 
 
 @app.get("/health")
