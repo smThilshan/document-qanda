@@ -51,3 +51,15 @@ _env = _get_required_env_vars()
 OPENAI_API_KEY = _env["OPENAI_API_KEY"]
 SUPABASE_URL = _env["SUPABASE_URL"]
 SUPABASE_KEY = _env["SUPABASE_KEY"]
+
+# Not in REQUIRED_ENV_VARS on purpose: unlike the secrets above, this has a
+# safe, working default (local dev), so it shouldn't block the app from
+# starting if unset. Comma-separated so both a local dev origin and a
+# deployed frontend origin can be allowed at once (e.g. while testing a
+# deployed backend against a local frontend, or vice versa) without a code
+# change — just a different value per environment (Render/Vercel dashboard).
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]

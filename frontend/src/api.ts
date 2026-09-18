@@ -6,7 +6,12 @@
  * component reading a field that no longer exists.
  */
 
-const API_BASE_URL = "http://localhost:8000";
+// VITE_API_URL is read from a .env file (see .env.example) or, in
+// deployment, from the environment variable set in Vercel's dashboard —
+// so pointing this at a deployed backend is a config change, not a code
+// change. The fallback keeps `npm run dev` working out of the box even
+// if no .env file has been created yet.
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export interface SourceChunk {
   document_name: string;

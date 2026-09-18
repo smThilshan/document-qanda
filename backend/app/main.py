@@ -9,18 +9,19 @@ the app. main.py should stay small forever — it's the wiring, not the logic.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import ALLOWED_ORIGINS
 from app.routers import documents, query, upload
 from app.schemas import HealthResponse
 
 app = FastAPI(title="Document Q&A RAG System")
 
-# The React dev server (Vite) runs on a different origin (localhost:5173)
-# than this API (localhost:8000). Browsers block cross-origin fetch/XHR
-# calls by default unless the server explicitly allows the caller's
-# origin — this is what makes that allowed, for local development only.
+# Which origins may call this API from a browser is environment-specific
+# (localhost:5173 in dev, a real Vercel URL in production) — read from
+# ALLOWED_ORIGINS via config.py rather than hardcoded here, so switching
+# environments is a dashboard env var change, not a code change/redeploy.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
