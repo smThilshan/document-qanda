@@ -10,6 +10,7 @@ export function QuerySection() {
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -17,6 +18,7 @@ export function QuerySection() {
 
     setLoading(true);
     setError(null);
+    setSourcesExpanded(false);
 
     try {
       const response = await askQuestion(question);
@@ -61,21 +63,28 @@ export function QuerySection() {
 
           {result.sources.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                Sources ({result.sources.length})
-              </p>
-              {result.sources.map((source, index) => (
-                <div
-                  key={index}
-                  className="rounded-lg border border-slate-200 bg-white p-3 text-sm"
-                >
-                  <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
-                    <span>{source.document_name}</span>
-                    <span>similarity: {source.similarity.toFixed(3)}</span>
+              <button
+                type="button"
+                onClick={() => setSourcesExpanded((expanded) => !expanded)}
+                className="flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-slate-400 hover:text-slate-600"
+              >
+                {sourcesExpanded ? "Hide" : "Show"} sources ({result.sources.length})
+                <span className="text-[10px]">{sourcesExpanded ? "▲" : "▼"}</span>
+              </button>
+
+              {sourcesExpanded &&
+                result.sources.map((source, index) => (
+                  <div
+                    key={index}
+                    className="rounded-lg border border-slate-200 bg-white p-3 text-sm"
+                  >
+                    <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
+                      <span>{source.document_name}</span>
+                      <span>similarity: {source.similarity.toFixed(3)}</span>
+                    </div>
+                    <p className="text-slate-600">{source.content}</p>
                   </div>
-                  <p className="text-slate-600">{source.content}</p>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </div>
