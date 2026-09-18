@@ -46,22 +46,25 @@ gets handed 5 chunks of context, and we're relying entirely on the LLM's
 system prompt to notice they're irrelevant and say so. That worked in
 testing, but it's the model's judgment call, not a guarantee.
 
-MIN_SIMILARITY = 0.25 was set empirically, not guessed: against this
-project's real test data, genuinely relevant matches scored 0.36-0.41,
-and a deliberately unrelated question scored 0.07-0.11 — a wide, clean
-gap. 0.25 sits comfortably in that gap. This is a heuristic tied to
-OpenAI's text-embedding-3-small on this kind of document; a different
-embedding model or very different content (e.g. short, keyword-sparse
-text) could shift where relevant/irrelevant scores actually fall, so this
-number is a starting point to revisit if retrieval quality looks off on
-a different corpus, not a universal constant.
+MIN_SIMILARITY was set empirically against real test data: genuinely
+relevant matches scored 0.36-0.41, a vague-but-valid short question
+("what is his name") scored 0.216, and a deliberately unrelated question
+("favorite pizza topping") scored 0.07-0.11. It was first set to 0.25
+(rejected the valid short question), then lowered to 0.10 — a deliberate
+choice to accept every valid question seen so far, accepting the known
+trade-off that it now sits inside the measured noise band (0.07-0.11)
+rather than above it: some genuinely unrelated questions may pass through
+to the LLM instead of being rejected in code. The LLM's own system prompt
+("say so if not in context") is the remaining safety net for those cases,
+not a code-enforced guarantee. This is a heuristic tied to
+text-embedding-3-small on this kind of document, not a universal constant.
 """
 
 from app.db.supabase_client import supabase
 from app.services.embeddings import EmbeddingError, generate_embedding
 
 DEFAULT_MATCH_COUNT = 5
-MIN_SIMILARITY = 0.25
+MIN_SIMILARITY = 0.10
 
 
 class RetrievalError(Exception):
