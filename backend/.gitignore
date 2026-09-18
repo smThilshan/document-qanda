@@ -1,0 +1,12 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment (uv creates this)
+.venv/
+
+# uv lock file is normally committed, but if you ever want a scratch env, ignore caches
+.uv-cache/
